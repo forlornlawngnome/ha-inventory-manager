@@ -128,7 +128,7 @@ All consumption entities:
 - **Entity ID**: `binary_sensor.<item_name>_warning`
 - **Purpose**: Alerts when supply is running low
 - **Device Class**: Problem
-- **State**: 
+- **State**:
   - `On`: Days remaining < configured warning threshold
   - `Off`: Sufficient supply available
 
@@ -276,6 +276,25 @@ automation:
       - service: notify.mobile_app
         data:
           message: "Added 30 tablets to Vetmedin inventory"
+```
+
+### Example 5: Fill Supplies via NFC tag
+
+```yaml
+automation:
+  - alias: "Restock Medication via NFC"
+    trigger:
+      - platform: tag
+        tag_id: "medication_restock"
+    action:
+      - service: inventory_manager.fill
+        target:
+          entity_id: number.vetmedin_5mg_supply
+      - service: notify.mobile_app
+        data:
+          message: >
+            Added {{ states('number.vetmedin_5mg_package_quantity') | int }}
+            tablets to Vetmedin inventory
 ```
 
 ## Troubleshooting
