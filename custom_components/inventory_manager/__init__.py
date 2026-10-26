@@ -4,6 +4,13 @@ from __future__ import annotations
 
 import logging
 from typing import TYPE_CHECKING
+from typing import Any
+
+from homeassistant.core import callback
+from homeassistant.helpers import entity_registry as er
+from slugify import slugify
+
+from .const import UNIQUE_ID
 
 import homeassistant.helpers.config_validation as cv
 from homeassistant.const import Platform
@@ -61,6 +68,7 @@ async def async_setup_entry(
         ),
         coordinator=coordinator,
     )
+    await _async_migrate_fork_unique_ids(hass, entry, coordinator)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
@@ -102,3 +110,42 @@ async def async_reload_entry(
 ) -> None:
     """Reload config entry when options change."""
     await hass.config_entries.async_reload(entry.entry_id)
+
+
+async def _async_migrate_fork_unique_ids(
+    hass: core.HomeAssistant,
+    entry: InventoryManagerConfigEntry,
+    coordinator: InventoryManagerItem,
+) -> None:
+    """
+    One-time: move unique ids from my old fork's scheme to the item id scheme.
+
+    Keeps entity ids, restored values and history. Remove once prod has run it.
+    """
+    old_to_new = {
+        slugify(entry.entry_id + "_" + entity_type.name): config[UNIQUE_ID]
+        for entity_type, config in coordinator.entity_config.items()
+    }
+    registry = er.async_get(hass)
+
+    @callback
+    def _migrate(entity_entry: er.RegistryEntry) -> dict[str, Any] | None:
+        new_id = old_to_new.get(entity_entry.unique_id)
+        if new_id is None:
+            return None
+        if registry.async_get_entity_id(entity_entry.domain, DOMAIN, new_id):
+            _LOGGER.warning(
+                "Not migrating %s: unique ID %s is already used",
+                entity_entry.entity_id,
+                new_id,
+            )
+            return None
+        _LOGGER.info(
+            "Migrating %s from unique ID %s to %s",
+            entity_entry.entity_id,
+            entity_entry.unique_id,
+            new_id,
+        )
+        return {"new_unique_id": new_id}
+
+    await er.async_migrate_entries(hass, entry.entry_id, _migrate)
